@@ -7,7 +7,9 @@ Usage:
 
 from string import Template
 from pandocfilters import toJSONFilter, RawBlock, RawInline
+import warnings
 
+special_attributes = ["caption", "label"]
 
 def unpack_code(value, language):
     ''' Unpack the body and language of a pandoc code element.
@@ -21,10 +23,18 @@ def unpack_code(value, language):
     if len(classes) > 0:
         language = classes[0]
 
+    extras = {}
+    for key in special_attributes:
+        if attributes:
+            if dict(attributes).get(key):
+                d = dict(attributes)
+                extras[key] = d[key]
+                d.pop(key)
+                attributes = list(map(list, d.items()))
     attributes = ', '.join('='.join(x) for x in attributes)
 
-    return {'contents': contents, 'language': language,
-            'attributes': attributes}
+    return dict(list({'contents': contents, 'language': language,
+            'attributes': attributes}.items()) + list(extras.items()))
 
 
 def unpack_metadata(meta):
@@ -49,7 +59,7 @@ def unpack_metadata(meta):
     else:
         # Return default settings.
         return {'language': 'text'}
-    
+
 
 def minted(key, value, format, meta):
     ''' Use minted for code in LaTeX.
@@ -66,7 +76,7 @@ def minted(key, value, format, meta):
     # Determine what kind of code object this is.
     if key == 'CodeBlock':
         template = Template(
-            '\\begin{minted}[$attributes]{$language}\n$contents\n\end{minted}'
+            '\\begin{listing}[!ht]\n\\begin{minted}[$attributes]{$language}\n$contents\n\end{minted}\n$extra\\end{listing}'
         )
         Element = RawBlock
     elif key == 'Code':
@@ -78,8 +88,11 @@ def minted(key, value, format, meta):
     settings = unpack_metadata(meta)
 
     code = unpack_code(value, settings['language'])
-
-    return [Element(format, template.substitute(code))]
+    extras = []
+    for a_key in special_attributes:
+        if code.get(a_key):
+            extras += f"\\{a_key}{{{code.pop(a_key)}}}\n"
+    return [Element(format, template.substitute(code | {"extra": ''.join(extras)}))]
 
 
 if __name__ == '__main__':
